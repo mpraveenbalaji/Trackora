@@ -1,0 +1,38 @@
+Basically, what this app needs to do is—suppose we have a sales team. Around 1,000 people are working. These 1,000 people visit 1,000 different locations in a day. Right? You are the manager who oversees these 1,000 people. How will you be able to view data for all 1,000 people?
+Through a website?
+Assume there is no website. Say it's a new company with around 500 people. They aren't that big and don't have an idea about that. How would you optimize this? Would you collect each person's worksheet—for example, getting the sales person's worksheet, meaning an Excel sheet—and manually verify where all he went and what data he has recorded? No, right? Instead of that, having a total hub like a database provides so many benefits across the board. Yes or no?
+Yes.
+So, this is based on that exact concept. Here, you are the admin. Assume this is the admin panel. Under the admin, there are multiple users—nearly 100 to 500 people. Each user has their own individual login. But on that admin panel, details of all 500 people should be visible. When do they go... for example, if I click on a person, I should see what data he collected on today's date, how many people he met, and where he went. Looking at this will give an overall idea. But this is the main logic: where did this person go on the 22nd? How many targets did he complete today out of the assigned quota? We should be able to view a dataset showing what he did yesterday and the day before yesterday. There is an app called ubiAttendance; if you search for it, you'll get an idea. We can view previous dates there. Got it?
+Now, let me give you the specific details of what the app does. First, what this app will do is—suppose I hand it over to a client, I mean to my... how to put it? What, bro? I hand it over to a salesman. Every morning, inside this app—you have geolocation enabled, right?—he should tap the geolocation to record his attendance based on where he is. Okay? Once the attendance is marked, what he needs to do next is log his visits. If it's a "New Visit", which place did he go to? For instance, he might say, "Sir, today I went to the Reliance office... no, I went to Pothys, sir." The phone number of Pothys, whom did he contact and meet at Pothys, that person's details, email ID... Suppose this is for Dubai, let's say Dubai. In India, it would cover all states like Pondicherry, Tamil Nadu, etc. Which area within that state—details like that. Then, is this a newly acquired client or an existing one? Was it a cold call, or an in-person visit? All that fresh information. What deal size did you discuss with him? A general estimate.
+After doing that, under the enquiry notes at the bottom, he can write, "Okay, this person is asking for 500 dollars / 500 rupees less, but it's worth it. We'll get a bigger project next time, so we can negotiate and close this deal, sir." He can type that, or leave a voice note, or click "Add Details" and input their pricing information. Once he clicks "Save", it should immediately reflect in the admin view. Do you understand? The admin should be able to see the details of all 500 people. At the same time, this shouldn't be exposed to everyone else. Okay?
+However, if he completes this task—for instance, today he took up this task, number one. He completed the task and clicked "Save", so it's done. Suppose it goes into "Approval" or "Pending" status; once approved, everyone should receive a notification. Why? Because out of 20 people, if one person hits the target, there is a prize. He will hustle. Understand? On that basis, everyone should get notified. Whoever is in the top 5 will get a gift. Say, 50 targets per month; whoever hits 50 targets gets this reward, or for 20. Then, seeing this every day, they will race to compete. Suddenly, we can trigger a notification around 5:00 PM or 6:00 PM saying, "There are three people leading ahead of you; how many tasks have you completed today?" You know, just like how Swiggy does it. Can we do something like this? Will you give it a try?
+Yeah.
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Trackora
+Every Visit. Every Goal. Every Win.
+Track smarter. Manage better. Grow together.
+
+I'm building a field sales management app for a company with roughly 100 to 500 field salespeople who each visit different client locations daily. The admin side needs to give a manager a clear, real-time view of the whole team, and the field app needs to make daily logging fast enough that salespeople actually use it. Please design the core product for me: the data model, the screens, the logic, and the reasoning behind each choice, so I can take it to a developer or build it myself.
+
+Here is how the product should work.
+
+**Field salesperson app (mobile):**
+- Each salesperson has their own login. They see only their own data.
+- Each morning they mark attendance by tapping a button that captures their geolocation.
+- They log a visit by choosing "New Visit" and entering: the business name, its phone number, the person met (name, role, phone, email), location (state, city, area), whether the client is new or existing, the visit type (cold call or in-person), and an estimated deal size.
+- Under enquiry notes they can type, record a voice note, or tap "Add Details" to enter pricing or negotiation information.
+- Tapping "Save" submits the visit. The visit enters a Pending state until approved, and once approved it counts toward targets and appears in the admin view.
+
+**Admin panel (web):**
+- The admin sees all salespeople in one dashboard. Clicking a person opens their day: attendance, every visit with location and outcome, the number of people met, and the targets completed against their assigned quota.
+- The admin can browse any previous date, such as the 22nd or yesterday, and view the same detail for each day, similar to how attendance apps let you review past records.
+- The admin approves or rejects pending visits. Approval triggers notifications.
+- Salespeople must never see each other's data or the admin view.
+
+**Gamification and notifications:**
+- Targets are set per period (for example 20 or 50 completed visits per month). Whoever hits the target earns a reward, and the top 5 on the leaderboard receive a gift.
+- When a visit is approved, all relevant salespeople are notified of the new standings.
+- Around 5:00 to 6:00 PM each day, every salesperson receives a live nudge showing who is ahead of them and how many tasks they have completed, in the style of a food-delivery app's live progress updates.
+
+Please deliver: (1) the core user roles and permissions, (2) the data model for salespeople, visits, contacts, clients, targets, and approvals, (3) the field app screen flow, (4) the admin dashboard layout and drill-down behavior, (5) the approval workflow, (6) the notification and leaderboard logic, including how ranking is calculated and how ties are handled, and (7) the main risks, such as GPS spoofing, offline entry, and duplicate visits, with a recommended way to handle each. Explain your reasoning briefly where a choice is non-obvious. If any detail is unspecified, make a reasonable assumption, state it clearly, and proceed.

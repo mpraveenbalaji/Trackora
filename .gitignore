@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Expo & Metro
+.expo/
+**/.expo/
+dist/
+web-build/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# OS Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment variables
+.env
+.env.local
+.env*.local
+
+# Flutter temporary build folders
+Trackora/mobile/.dart_tool/
+Trackora/mobile/build/
+Trackora/mobile/.flutter-plugins
+Trackora/mobile/.flutter-plugins-dependencies
+
+# Next.js build cache
+Trackora/admin_web/.next/
+
+# Backend SQLite database (auto-created, should not be committed)
+Trackora/backend/data/*.db
+
+# Python temp files
+requirements_inthiyaz/generate_recap_pdf.py
+__pycache__/
+*.pyc
