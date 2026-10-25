@@ -1,11 +1,17 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:permission_handler/permission_handler.dart' hide ServiceStatus;
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:record/record.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:http/http.dart' as http;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -167,6 +173,69 @@ class RealHardwareService {
     } catch (_) {
       return null;
     }
+  }
+
+  // Dynamically reverse geocode coordinates to real Street name, Area, City & Postal code
+  static Future<String> getAddressFromCoordinates(double lat, double lng) async {
+    // Strategy 1: Native Android Geocoder via Geocoding().placemarkFromCoordinates
+    try {
+      final List<Placemark> placemarks = await Geocoding().placemarkFromCoordinates(lat, lng).timeout(const Duration(seconds: 4));
+      if (placemarks.isNotEmpty) {
+        final p = placemarks.first;
+        final parts = <String>[];
+        if (p.name != null && p.name!.isNotEmpty && p.name != p.street && p.name != p.subLocality) {
+          parts.add(p.name!);
+        }
+        if (p.street != null && p.street!.isNotEmpty && !parts.contains(p.street)) {
+          parts.add(p.street!);
+        }
+        if (p.subLocality != null && p.subLocality!.isNotEmpty && !parts.contains(p.subLocality)) {
+          parts.add(p.subLocality!);
+        }
+        if (p.locality != null && p.locality!.isNotEmpty && !parts.contains(p.locality)) {
+          parts.add(p.locality!);
+        }
+        if (p.subAdministrativeArea != null && p.subAdministrativeArea!.isNotEmpty && !parts.contains(p.subAdministrativeArea) && p.subAdministrativeArea != p.locality) {
+          parts.add(p.subAdministrativeArea!);
+        }
+        if (p.administrativeArea != null && p.administrativeArea!.isNotEmpty && !parts.contains(p.administrativeArea)) {
+          parts.add(p.administrativeArea!);
+        }
+        if (p.postalCode != null && p.postalCode!.isNotEmpty) {
+          parts.add(p.postalCode!);
+        }
+        if (parts.isNotEmpty) {
+          return parts.join(', ');
+        }
+      }
+    } catch (_) {}
+
+    // Strategy 2: OpenStreetMap Nominatim reverse geocode fallback
+    try {
+      final uri = Uri.parse('https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=$lat&lon=$lng');
+      final resp = await http.get(uri, headers: {'User-Agent': 'TrackoraMobileApp/4.0'}).timeout(const Duration(seconds: 4));
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final address = data['address'] as Map<String, dynamic>?;
+        if (address != null) {
+          final parts = <String>[];
+          final road = address['road'] ?? address['pedestrian'] ?? address['neighbourhood'] ?? address['suburb'];
+          final city = address['city'] ?? address['town'] ?? address['village'] ?? address['county'];
+          final state = address['state'];
+          final postcode = address['postcode'];
+          if (road != null && road.toString().isNotEmpty) parts.add(road.toString());
+          if (city != null && city.toString().isNotEmpty) parts.add(city.toString());
+          if (state != null && state.toString().isNotEmpty) parts.add(state.toString());
+          if (postcode != null && postcode.toString().isNotEmpty) parts.add(postcode.toString());
+          if (parts.isNotEmpty) return parts.join(', ');
+        }
+        if (data['display_name'] != null) {
+          return data['display_name'].toString();
+        }
+      }
+    } catch (_) {}
+
+    return '${lat.toStringAsFixed(4)}° N, ${lng.toStringAsFixed(4)}° E';
   }
 
   // Open real Google Maps app or web browser with coordinate pin
@@ -729,115 +798,85 @@ class MainNavigationShell extends StatefulWidget {
   State<MainNavigationShell> createState() => _MainNavigationShellState();
 }
 
-class _MainNavigationShellState extends State<MainNavigationShell> {
+class _MainNavigationShellState extends State<MainNavigationShell> with WidgetsBindingObserver {
   int _currentIndex = 0;
 
   // Real GPS Sensor Status
-  bool _isGpsOn = true;
+  bool _isGpsOn = false;
   Position? _livePosition;
+  StreamSubscription<ServiceStatus>? _gpsStatusSub;
 
-  // Attendance State
+  // Notification badge count (clears when viewed)
+  int _unreadNotifsCount = 3;
+
+  // Attendance State (Persisted until 12:00 AM Midnight)
   bool _isCheckedIn = false;
   String? _punchedDateKey;
-  String _checkInTime = '10:05 AM';
-  String _checkInLocation = 'Usman Road, T. Nagar, Chennai';
+  String _checkInTime = '--:--';
+  String _checkInLocation = 'Tap below to pin location on Google Map';
   Map<String, dynamic>? _stagedLocation;
   File? _stagedOfficerPhoto;
   String? _stagedPhotoTime;
 
-  // Team Field Logs History in Memory
-  final List<Map<String, dynamic>> _visits = [
-    {
-      'id': 'v-101',
-      'client': 'SMVEC Campus / Tech Park',
-      'contact': 'Dean / Admin Office',
-      'phone': '+91 413 264 3000',
-      'area': 'Madagadipet, Pondicherry - 605107',
-      'state': 'Pondicherry',
-      'amount': '₹ 18,50,000',
-      'costRaw': 1850000,
-      'time': '10:15 AM',
-      'stampedDateTime': 'Sunday, 25 Oct 2026 • 10:15 AM',
-      'coordinates': '11.9423° N, 79.8156° E',
-      'type': 'In-Person',
-      'status': 'Approved',
-      'notes': 'Met with administrative board. Finalized campus-wide deployment proposal for 1,200 faculty tablets.',
-      'hotLead': true,
-      'hasPhoto': true,
-      'photoFile': null,
-      'hasAudio': true,
-      'audioDuration': '38s',
-    },
-    {
-      'id': 'v-102',
-      'client': 'Pothys Flagship Store',
-      'contact': 'Murugan Swaminathan (GM)',
-      'phone': '+91 98400 11223',
-      'area': 'Usman Road, T. Nagar, Chennai - 600017',
-      'state': 'Tamil Nadu',
-      'amount': '₹ 15,00,000',
-      'costRaw': 1500000,
-      'time': '11:45 AM',
-      'stampedDateTime': 'Sunday, 25 Oct 2026 • 11:45 AM',
-      'coordinates': '13.0418° N, 80.2341° E',
-      'type': 'In-Person',
-      'status': 'Approved',
-      'notes': 'Quarterly retail POS inventory audit. Recommended Trackora smart scanners for 4 floors.',
-      'hotLead': true,
-      'hasPhoto': true,
-      'photoFile': null,
-      'hasAudio': true,
-      'audioDuration': '45s',
-    },
-    {
-      'id': 'v-103',
-      'client': 'Saravana Stores Elite',
-      'contact': 'R. Veeramani (Procurement)',
-      'phone': '+91 98401 55667',
-      'area': 'Pondy Bazaar, T. Nagar, Chennai - 600017',
-      'state': 'Tamil Nadu',
-      'amount': '₹ 8,50,000',
-      'costRaw': 850000,
-      'time': '01:20 PM',
-      'stampedDateTime': 'Sunday, 25 Oct 2026 • 01:20 PM',
-      'coordinates': '13.0402° N, 80.2389° E',
-      'type': 'Product Demo',
-      'status': 'Approved',
-      'notes': 'Demonstrated RFID tag sync and geo-tracking modules for field delivery agents.',
-      'hotLead': true,
-      'hasPhoto': true,
-      'photoFile': null,
-      'hasAudio': false,
-      'audioDuration': null,
-    },
-    {
-      'id': 'v-104',
-      'client': 'Reliance Retail South Hub',
-      'contact': 'Anil Kumble (Regional Head)',
-      'phone': '+91 99000 44556',
-      'area': 'MG Road / Brigade Road, Bengaluru - 560001',
-      'state': 'Karnataka',
-      'amount': '₹ 45,00,000',
-      'costRaw': 4500000,
-      'time': '03:15 PM',
-      'stampedDateTime': 'Sunday, 25 Oct 2026 • 03:15 PM',
-      'coordinates': '12.9716° N, 77.5946° E',
-      'type': 'Contract Negotiation',
-      'status': 'Pending Approval',
-      'notes': 'Reviewed enterprise multi-state SLA terms. Waiting on regional finance committee sign-off.',
-      'hotLead': true,
-      'hasPhoto': true,
-      'photoFile': null,
-      'hasAudio': true,
-      'audioDuration': '52s',
-    },
-  ];
+  // Team Field Logs History (Clean fresh start)
+  List<Map<String, dynamic>> _visits = [];
 
   @override
   void initState() {
     super.initState();
-    _checkMidnightRollover();
-    _fetchRealDeviceGps();
+    WidgetsBinding.instance.addObserver(this);
+    _loadPersistedState();
+    _listenToGpsServiceStatus();
+    _checkRealGpsHardwareStatus();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _gpsStatusSub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkMidnightRollover();
+      _checkRealGpsHardwareStatus();
+    }
+  }
+
+  // Check and listen to real Android system location service switch
+  Future<void> _checkRealGpsHardwareStatus() async {
+    try {
+      final isServiceEnabled = await Geolocator.isLocationServiceEnabled();
+      LocationPermission perm = await Geolocator.checkPermission();
+      final hasPerm = perm == LocationPermission.always || perm == LocationPermission.whileInUse;
+      final realStatus = isServiceEnabled && hasPerm;
+      if (mounted) {
+        setState(() {
+          _isGpsOn = realStatus;
+        });
+      }
+      if (realStatus) {
+        _fetchRealDeviceGps();
+      }
+    } catch (_) {}
+  }
+
+  void _listenToGpsServiceStatus() {
+    try {
+      _gpsStatusSub = Geolocator.getServiceStatusStream().listen((ServiceStatus status) {
+        final isEnabled = status == ServiceStatus.enabled;
+        if (mounted) {
+          setState(() {
+            _isGpsOn = isEnabled;
+          });
+          if (isEnabled) {
+            _fetchRealDeviceGps();
+          }
+        }
+      });
+    } catch (_) {}
   }
 
   // Fetch real device coordinates from hardware GPS
@@ -851,7 +890,73 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     }
   }
 
-  void _checkMidnightRollover() {
+  // Load persisted attendance and notification badge state from SharedPreferences
+  Future<void> _loadPersistedState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final today = getTodayDateKey();
+    final savedDateKey = prefs.getString('trackora_attendance_date_key');
+    final isCheckedIn = prefs.getBool('trackora_attendance_is_checked_in') ?? false;
+
+    if (savedDateKey == today && isCheckedIn) {
+      setState(() {
+        _isCheckedIn = true;
+        _punchedDateKey = savedDateKey;
+        _checkInTime = prefs.getString('trackora_attendance_time') ?? '10:00 AM';
+        _checkInLocation = prefs.getString('trackora_attendance_location') ?? 'Verified Field Location';
+      });
+    } else {
+      await prefs.setBool('trackora_attendance_is_checked_in', false);
+      await prefs.remove('trackora_attendance_date_key');
+      setState(() {
+        _isCheckedIn = false;
+        _punchedDateKey = null;
+      });
+    }
+
+    final notifsCount = prefs.getInt('trackora_unread_notifs_count') ?? 3;
+    setState(() {
+      _unreadNotifsCount = notifsCount;
+    });
+
+    final visitsJson = prefs.getString('trackora_saved_visits');
+    if (visitsJson != null && visitsJson.isNotEmpty) {
+      try {
+        final List<dynamic> decoded = jsonDecode(visitsJson);
+        setState(() {
+          _visits = decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        });
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _saveAttendanceToStorage({
+    required bool isCheckedIn,
+    required String? dateKey,
+    required String time,
+    required String location,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('trackora_attendance_is_checked_in', isCheckedIn);
+    if (dateKey != null) {
+      await prefs.setString('trackora_attendance_date_key', dateKey);
+    } else {
+      await prefs.remove('trackora_attendance_date_key');
+    }
+    await prefs.setString('trackora_attendance_time', time);
+    await prefs.setString('trackora_attendance_location', location);
+  }
+
+  Future<void> _saveVisitsToStorage() async {
+    final prefs = await SharedPreferences.getInstance();
+    final serializable = _visits.map((v) {
+      final copy = Map<String, dynamic>.from(v);
+      copy['photoFile'] = null;
+      return copy;
+    }).toList();
+    await prefs.setString('trackora_saved_visits', jsonEncode(serializable));
+  }
+
+  void _checkMidnightRollover() async {
     final today = getTodayDateKey();
     if (_punchedDateKey != null && _punchedDateKey != today) {
       setState(() {
@@ -861,51 +966,31 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
         _stagedOfficerPhoto = null;
         _stagedPhotoTime = null;
       });
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('trackora_attendance_is_checked_in', false);
+      await prefs.remove('trackora_attendance_date_key');
     }
   }
 
+  // Tapping GPS badge: Opens Android Location Settings if OFF, or requests permission
   Future<void> _toggleGps() async {
-    if (!_isGpsOn) {
-      final pos = await RealHardwareService.getRealCurrentGpsPosition();
-      setState(() {
-        _isGpsOn = true;
-        _livePosition = pos;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFF0F5132),
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 2),
-            content: Row(
-              children: [
-                const Icon(Icons.gps_fixed, color: Colors.white, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    pos != null
-                        ? 'Real Device GPS Connected: ${pos.latitude.toStringAsFixed(4)}°, ${pos.longitude.toStringAsFixed(4)}° (±${pos.accuracy.toStringAsFixed(1)}m)'
-                        : 'GPS Location Enabled',
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }
-    } else {
-      setState(() {
-        _isGpsOn = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          backgroundColor: Color(0xFF475569),
-          behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: 1),
-          content: Text('GPS Sensor Paused • Tap to re-enable'),
-        ),
-      );
+    final isServiceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!isServiceEnabled) {
+      await Geolocator.openLocationSettings();
+      await Future.delayed(const Duration(milliseconds: 500));
+      await _checkRealGpsHardwareStatus();
+      return;
     }
+
+    LocationPermission perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+      perm = await Geolocator.requestPermission();
+      if (perm == LocationPermission.deniedForever) {
+        await Geolocator.openAppSettings();
+      }
+    }
+
+    await _checkRealGpsHardwareStatus();
   }
 
   void _onLocationPinned(Map<String, dynamic> loc) {
@@ -921,34 +1006,56 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     });
   }
 
-  void _onPunchAttendance() {
+  Future<void> _onPunchAttendance() async {
     final now = DateTime.now();
+    final today = getTodayDateKey();
+    final timeStr = formatLiveTime(now);
+
+    String locStr = _stagedLocation != null ? (_stagedLocation!['area'] as String) : '';
+    if (locStr.isEmpty || locStr.contains('Tap below') || locStr.contains('Select') || locStr.contains('Pin Location')) {
+      if (_livePosition != null) {
+        locStr = await RealHardwareService.getAddressFromCoordinates(_livePosition!.latitude, _livePosition!.longitude);
+      } else {
+        locStr = 'Verified Field Location';
+      }
+    }
+
     setState(() {
       _isCheckedIn = true;
-      _punchedDateKey = getTodayDateKey();
-      _checkInTime = formatLiveTime(now);
-      _checkInLocation = _stagedLocation != null ? _stagedLocation!['area'] as String : 'Usman Road, T. Nagar, Chennai';
+      _punchedDateKey = today;
+      _checkInTime = timeStr;
+      _checkInLocation = locStr;
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: const Color(0xFF0F5132),
-        behavior: SnackBarBehavior.floating,
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle, color: Colors.white, size: 20),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                '🎉 Daily Geo-Attendance punched successfully! Verified at $_checkInLocation at $_checkInTime.',
-              ),
-            ),
-          ],
-        ),
-      ),
+
+    await _saveAttendanceToStorage(
+      isCheckedIn: true,
+      dateKey: today,
+      time: timeStr,
+      location: locStr,
     );
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF0F5132),
+          behavior: SnackBarBehavior.floating,
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '🎉 Daily Geo-Attendance punched successfully! Verified at $locStr at $timeStr.',
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
   }
 
-  void _onSimulateMidnightReset() {
+  void _onSimulateMidnightReset() async {
     setState(() {
       _isCheckedIn = false;
       _punchedDateKey = null;
@@ -956,23 +1063,28 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
       _stagedOfficerPhoto = null;
       _stagedPhotoTime = null;
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        backgroundColor: Color(0xFF1E293B),
-        behavior: SnackBarBehavior.floating,
-        content: Row(
-          children: [
-            Icon(Icons.nightlight_round, color: Color(0xFFFDBA74), size: 20),
-            SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                '🌙 12:00 AM Midnight Rollover Simulated! Attendance reset to NOT MARKED for the new day.',
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('trackora_attendance_is_checked_in', false);
+    await prefs.remove('trackora_attendance_date_key');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Color(0xFF1E293B),
+          behavior: SnackBarBehavior.floating,
+          content: Row(
+            children: [
+              Icon(Icons.nightlight_round, color: Color(0xFFFDBA74), size: 20),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '🌙 12:00 AM Midnight Rollover Simulated! Attendance reset to NOT MARKED for the new day.',
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-    );
+      );
+    }
   }
 
   void _addNewVisit(Map<String, dynamic> visit) {
@@ -980,6 +1092,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
       _visits.insert(0, visit);
       _currentIndex = 2; // Automatically switch to Visit History tab
     });
+    _saveVisitsToStorage();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         backgroundColor: const Color(0xFF0F5132),
@@ -999,7 +1112,14 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     );
   }
 
-  void _openNotificationsModal(BuildContext context) {
+  void _openNotificationsModal(BuildContext context) async {
+    setState(() {
+      _unreadNotifsCount = 0;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('trackora_unread_notifs_count', 0);
+
+    if (!context.mounted) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1185,6 +1305,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
         livePosition: _livePosition,
         onToggleGps: _toggleGps,
         onOpenNotifications: () => _openNotificationsModal(context),
+        unreadNotifsCount: _unreadNotifsCount,
         isCheckedIn: _isCheckedIn,
         checkInTime: _checkInTime,
         checkInLocation: _checkInLocation,
@@ -1290,6 +1411,7 @@ class HomeScreen extends StatelessWidget {
   final Position? livePosition;
   final VoidCallback onToggleGps;
   final VoidCallback onOpenNotifications;
+  final int unreadNotifsCount;
   final bool isCheckedIn;
   final String checkInTime;
   final String checkInLocation;
@@ -1311,6 +1433,7 @@ class HomeScreen extends StatelessWidget {
     required this.livePosition,
     required this.onToggleGps,
     required this.onOpenNotifications,
+    required this.unreadNotifsCount,
     required this.isCheckedIn,
     required this.checkInTime,
     required this.checkInLocation,
@@ -1329,7 +1452,9 @@ class HomeScreen extends StatelessWidget {
   void _openAttendanceMapPicker(BuildContext context) async {
     final double lat = livePosition?.latitude ?? (stagedLocation != null ? (stagedLocation!['lat'] as double) : 13.0418);
     final double lng = livePosition?.longitude ?? (stagedLocation != null ? (stagedLocation!['lng'] as double) : 80.2341);
-    final String area = stagedLocation != null ? (stagedLocation!['area'] as String) : 'Usman Road, T. Nagar, Chennai - 600017';
+    final String area = stagedLocation != null
+        ? (stagedLocation!['area'] as String)
+        : (livePosition != null ? 'Pin Location via Google Map' : 'Tap below to pin location on Google Map');
 
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
@@ -1385,7 +1510,7 @@ class HomeScreen extends StatelessWidget {
         barrierDismissible: false,
         builder: (ctx) => OfficerFaceCameraDialog(
           currentUser: currentUser,
-          pinnedLocation: stagedLocation != null ? stagedLocation!['area'] as String? : 'Usman Road, T. Nagar, Chennai',
+          pinnedLocation: stagedLocation != null ? stagedLocation!['area'] as String? : 'Current Field Location',
         ),
       );
 
@@ -1604,23 +1729,46 @@ class HomeScreen extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Requirement 1: Removed percentage, cleanly aligned progress header
+                // Issue 5: Sleek, perfectly aligned Weekly Target Progress banner
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
                     color: const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFBFDBFE)),
                   ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Weekly Target Progress:',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Weekly Target Progress',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF2563EB),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text(
+                              '18 / 30 Completed',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                          ),
+                        ],
                       ),
-                      Text(
-                        '18 / 30 Completed',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF2563EB)),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: const LinearProgressIndicator(
+                          value: 18 / 30,
+                          minHeight: 6,
+                          backgroundColor: Color(0xFFDBEAFE),
+                          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2563EB)),
+                        ),
                       ),
                     ],
                   ),
@@ -1861,18 +2009,22 @@ class HomeScreen extends StatelessWidget {
               clipBehavior: Clip.none,
               children: [
                 const Icon(Icons.notifications_outlined, color: Color(0xFF0F172A), size: 24),
-                Positioned(
-                  right: -2,
-                  top: -2,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFEF4444),
-                      shape: BoxShape.circle,
+                if (unreadNotifsCount > 0)
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFEF4444),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        '$unreadNotifsCount',
+                        style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                      ),
                     ),
-                    child: const Text('3', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
                   ),
-                ),
               ],
             ),
           ),
@@ -1882,16 +2034,16 @@ class HomeScreen extends StatelessWidget {
               margin: const EdgeInsets.only(right: 14),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: isGpsOn ? const Color(0xFFECFDF5) : const Color(0xFFF1F5F9),
+                color: isGpsOn ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: isGpsOn ? const Color(0xFFA7F3D0) : const Color(0xFFCBD5E1)),
+                border: Border.all(color: isGpsOn ? const Color(0xFFA7F3D0) : const Color(0xFFFECACA)),
               ),
               child: Row(
                 children: [
                   Icon(
-                    isGpsOn ? Icons.gps_fixed : Icons.gps_off,
+                    isGpsOn ? Icons.gps_fixed : Icons.location_off,
                     size: 13,
-                    color: isGpsOn ? const Color(0xFF059669) : const Color(0xFF64748B),
+                    color: isGpsOn ? const Color(0xFF059669) : const Color(0xFFDC2626),
                   ),
                   const SizedBox(width: 4),
                   Text(
@@ -1899,7 +2051,7 @@ class HomeScreen extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
-                      color: isGpsOn ? const Color(0xFF059669) : const Color(0xFF64748B),
+                      color: isGpsOn ? const Color(0xFF059669) : const Color(0xFFDC2626),
                     ),
                   ),
                 ],
@@ -2530,6 +2682,275 @@ class HomeScreen extends StatelessWidget {
 }
 
 // =============================================================
+// REAL HARDWARE AUDIO RECORDER DIALOG (Dynamic Mic & Timer)
+// =============================================================
+class AudioRecorderDialog extends StatefulWidget {
+  const AudioRecorderDialog({super.key});
+
+  @override
+  State<AudioRecorderDialog> createState() => _AudioRecorderDialogState();
+}
+
+class _AudioRecorderDialogState extends State<AudioRecorderDialog> {
+  final AudioRecorder _audioRecorder = AudioRecorder();
+  bool _isRecording = false;
+  bool _hasRecorded = false;
+  String? _recordedAudioPath;
+  int _recordedSeconds = 0;
+  Timer? _timer;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _audioRecorder.dispose();
+    super.dispose();
+  }
+
+  Future<void> _startRecording() async {
+    try {
+      final hasPerm = await _audioRecorder.hasPermission();
+      if (!hasPerm) {
+        final status = await Permission.microphone.request();
+        if (!status.isGranted) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Please grant microphone access in Phone Settings')),
+            );
+          }
+          return;
+        }
+      }
+
+      final tempDir = await getTemporaryDirectory();
+      final path = '${tempDir.path}/trackora_audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+      await _audioRecorder.start(
+        const RecordConfig(encoder: AudioEncoder.aacLc),
+        path: path,
+      );
+
+      setState(() {
+        _isRecording = true;
+        _hasRecorded = false;
+        _recordedAudioPath = path;
+        _recordedSeconds = 0;
+      });
+
+      _timer?.cancel();
+      _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+        if (_recordedSeconds >= 60) {
+          _stopRecording();
+        } else {
+          setState(() {
+            _recordedSeconds++;
+          });
+        }
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error starting recording: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    _timer?.cancel();
+    try {
+      final path = await _audioRecorder.stop();
+      setState(() {
+        _isRecording = false;
+        _hasRecorded = true;
+        if (path != null) {
+          _recordedAudioPath = path;
+        }
+      });
+    } catch (_) {
+      setState(() {
+        _isRecording = false;
+        _hasRecorded = true;
+      });
+    }
+  }
+
+  String _formatDuration(int seconds) {
+    final m = (seconds ~/ 60).toString().padLeft(2, '0');
+    final s = (seconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF0F172A),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: const Row(
+        children: [
+          Icon(Icons.mic, color: Color(0xFFC084FC), size: 22),
+          SizedBox(width: 10),
+          Text(
+            'Field Audio Memo',
+            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: _isRecording
+                    ? const Color(0xFFEF4444)
+                    : (_hasRecorded ? const Color(0xFF10B981) : const Color(0xFFC084FC).withAlpha(100)),
+                width: _isRecording ? 1.5 : 1,
+              ),
+            ),
+            child: Column(
+              children: [
+                if (_isRecording)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFEF4444),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'RECORDING LIVE AUDIO...',
+                        style: TextStyle(color: Color(0xFFEF4444), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                      ),
+                    ],
+                  ),
+                const SizedBox(height: 12),
+                // Dynamic Waveform
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(16, (i) {
+                    final double height = _isRecording
+                        ? (12 + (math.sin((_recordedSeconds * 4) + i) * 16).abs())
+                        : (_hasRecorded ? (12 + ((i * 7) % 24).toDouble()) : 14);
+                    return Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      width: 4,
+                      height: height,
+                      decoration: BoxDecoration(
+                        color: _isRecording
+                            ? const Color(0xFFEF4444)
+                            : (_hasRecorded ? const Color(0xFF10B981) : const Color(0xFFC084FC)),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    );
+                  }),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  '${_formatDuration(_recordedSeconds)} / 01:00',
+                  style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _isRecording
+                      ? 'Speaking into microphone • Recording dynamic memo'
+                      : (_hasRecorded
+                          ? 'Audio Memo Recorded Successfully ✓'
+                          : 'Tap Start Recording to record dynamic voice memo'),
+                  style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (!_isRecording && !_hasRecorded)
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: ElevatedButton.icon(
+                onPressed: _startRecording,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF9333EA),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const Icon(Icons.mic, size: 18),
+                label: const Text('Start Recording', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            )
+          else if (_isRecording)
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: ElevatedButton.icon(
+                onPressed: _stopRecording,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFEF4444),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const Icon(Icons.stop, size: 18),
+                label: const Text('Stop Recording', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            )
+          else ...[
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _startRecording,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                      side: const BorderSide(color: Colors.white30),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Re-Record'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context, {
+                        'path': _recordedAudioPath,
+                        'duration': '${_recordedSeconds}s',
+                        'seconds': _recordedSeconds,
+                      });
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF9333EA),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: const Icon(Icons.check, size: 18),
+                    label: const Text('Attach Audio Note ✓', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+        ),
+      ],
+    );
+  }
+}
+
+// =============================================================
 // INTERACTIVE GOOGLE MAP LOCATION PICKER (Real GPS + Live Pin)
 // =============================================================
 class AttendanceManualMapDialog extends StatefulWidget {
@@ -2549,7 +2970,6 @@ class AttendanceManualMapDialog extends StatefulWidget {
 }
 
 class _AttendanceManualMapDialogState extends State<AttendanceManualMapDialog> {
-  final _searchController = TextEditingController();
   late double _lat;
   late double _lng;
   late String _area;
@@ -2563,21 +2983,38 @@ class _AttendanceManualMapDialogState extends State<AttendanceManualMapDialog> {
     _lng = widget.initialLng;
     _area = widget.initialArea;
     _selectedTime = DateTime.now();
+
+    // If initial area was not yet resolved, resolve it dynamically
+    if (_area.contains('Select') || _area.contains('Pinned') || _area.contains('Fetching') || _area.contains('Usman Road')) {
+      _resolveCurrentAddress();
+    }
   }
 
-  // Requirement 2: Fetch actual phone GPS hardware coordinates
+  Future<void> _resolveCurrentAddress() async {
+    final addr = await RealHardwareService.getAddressFromCoordinates(_lat, _lng);
+    if (mounted) {
+      setState(() {
+        _area = addr;
+      });
+    }
+  }
+
+  // Requirement 2: Fetch actual phone GPS hardware coordinates & dynamic address
   Future<void> _fetchPhoneCurrentLocation() async {
     setState(() {
       _isFetchingLiveGps = true;
+      _area = 'Connecting to phone GPS and fetching address...';
     });
 
     final pos = await RealHardwareService.getRealCurrentGpsPosition();
 
     if (pos != null && mounted) {
+      final resolvedAddress = await RealHardwareService.getAddressFromCoordinates(pos.latitude, pos.longitude);
+      if (!mounted) return;
       setState(() {
         _lat = pos.latitude;
         _lng = pos.longitude;
-        _area = 'Live GPS Location (${pos.latitude.toStringAsFixed(4)}° N, ${pos.longitude.toStringAsFixed(4)}° E)';
+        _area = resolvedAddress;
         _selectedTime = DateTime.now();
         _isFetchingLiveGps = false;
       });
@@ -2585,33 +3022,24 @@ class _AttendanceManualMapDialogState extends State<AttendanceManualMapDialog> {
         SnackBar(
           backgroundColor: const Color(0xFF0F5132),
           behavior: SnackBarBehavior.floating,
-          content: Text('Live GPS Pin Locked: ${_lat.toStringAsFixed(4)}° N, ${_lng.toStringAsFixed(4)}° E (±${pos.accuracy.toStringAsFixed(1)}m) ✓'),
+          content: Text('Live GPS Address Locked: $resolvedAddress (±${pos.accuracy.toStringAsFixed(1)}m) ✓'),
         ),
       );
     } else {
       if (mounted) {
         setState(() {
           _isFetchingLiveGps = false;
+          _area = widget.initialArea;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             backgroundColor: Color(0xFFB45309),
             behavior: SnackBarBehavior.floating,
-            content: Text('Please enable device location in Phone Settings to get high accuracy pin'),
+            content: Text('Please enable GPS Location in Phone Settings to get high accuracy pin'),
           ),
         );
       }
     }
-  }
-
-  void _searchLocation(String query) {
-    if (query.trim().isEmpty) return;
-    setState(() {
-      _area = '${query.trim()}, Chennai - 600017';
-      _lat = 13.0418 + (query.hashCode % 100) * 0.0001;
-      _lng = 80.2341 + (query.hashCode % 100) * 0.0001;
-      _selectedTime = DateTime.now();
-    });
   }
 
   @override
@@ -2635,7 +3063,7 @@ class _AttendanceManualMapDialogState extends State<AttendanceManualMapDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Header
+            // Header (Requirement 2 & 4: Search bar removed!)
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 18, 16, 12),
               child: Row(
@@ -2658,7 +3086,7 @@ class _AttendanceManualMapDialogState extends State<AttendanceManualMapDialog> {
                           style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
                         ),
                         Text(
-                          'Search or tap anywhere on map to pin attendance location',
+                          'Tap anywhere on map or use Live GPS to fetch exact address',
                           style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                         ),
                       ],
@@ -2679,33 +3107,12 @@ class _AttendanceManualMapDialogState extends State<AttendanceManualMapDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Search bar
-                    TextField(
-                      controller: _searchController,
-                      onSubmitted: _searchLocation,
-                      decoration: InputDecoration(
-                        hintText: 'Search street, area or commercial hub...',
-                        hintStyle: const TextStyle(fontSize: 12),
-                        prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF0F5132)),
-                        suffixIcon: IconButton(
-                          icon: const Icon(Icons.arrow_forward, size: 18, color: Color(0xFF0F5132)),
-                          onPressed: () => _searchLocation(_searchController.text),
-                        ),
-                        filled: true,
-                        fillColor: const Color(0xFFF8FAFC),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-
                     // Requirement 2: Two Action Buttons (Fetch Live Device GPS & Open in Real Google Maps)
                     Row(
                       children: [
                         Expanded(
                           child: SizedBox(
-                            height: 38,
+                            height: 40,
                             child: OutlinedButton.icon(
                               onPressed: _isFetchingLiveGps ? null : _fetchPhoneCurrentLocation,
                               style: OutlinedButton.styleFrom(
@@ -2715,15 +3122,15 @@ class _AttendanceManualMapDialogState extends State<AttendanceManualMapDialog> {
                               ),
                               icon: _isFetchingLiveGps
                                   ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0F5132)))
-                                  : const Icon(Icons.my_location, size: 15, color: Color(0xFF0F5132)),
-                              label: const Text('Live Phone GPS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0F5132))),
+                                  : const Icon(Icons.my_location, size: 16, color: Color(0xFF0F5132)),
+                              label: const Text('Live Phone GPS', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F5132))),
                             ),
                           ),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: SizedBox(
-                            height: 38,
+                            height: 40,
                             child: ElevatedButton.icon(
                               onPressed: () {
                                 RealHardwareService.launchExternalGoogleMaps(_lat, _lng, label: _area);
@@ -2734,8 +3141,8 @@ class _AttendanceManualMapDialogState extends State<AttendanceManualMapDialog> {
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                 padding: const EdgeInsets.symmetric(horizontal: 8),
                               ),
-                              icon: const Icon(Icons.map, size: 15),
-                              label: const Text('Google Maps App', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                              icon: const Icon(Icons.map, size: 16),
+                              label: const Text('Google Maps App', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                             ),
                           ),
                         ),
@@ -2750,13 +3157,21 @@ class _AttendanceManualMapDialogState extends State<AttendanceManualMapDialog> {
                         height: 220,
                         width: double.infinity,
                         child: GestureDetector(
-                          onTapDown: (details) {
+                          onTapDown: (details) async {
+                            final newLat = double.parse((_lat + (details.localPosition.dy - 110) * 0.00005).toStringAsFixed(6));
+                            final newLng = double.parse((_lng + (details.localPosition.dx - 150) * 0.00005).toStringAsFixed(6));
                             setState(() {
-                              _lat = double.parse((_lat + (details.localPosition.dy - 110) * 0.00005).toStringAsFixed(6));
-                              _lng = double.parse((_lng + (details.localPosition.dx - 150) * 0.00005).toStringAsFixed(6));
-                              _area = 'Pinned Location: Near Usman Road, T. Nagar, Chennai - 600017';
+                              _lat = newLat;
+                              _lng = newLng;
+                              _area = 'Fetching street and city name...';
                               _selectedTime = DateTime.now();
                             });
+                            final resolved = await RealHardwareService.getAddressFromCoordinates(newLat, newLng);
+                            if (mounted) {
+                              setState(() {
+                                _area = resolved;
+                              });
+                            }
                           },
                           child: Stack(
                             children: [
@@ -2819,7 +3234,7 @@ class _AttendanceManualMapDialogState extends State<AttendanceManualMapDialog> {
                     ),
                     const SizedBox(height: 14),
 
-                    // Verified Stamp Card
+                    // Dynamic Real Address Stamp Card (Requirement 2 & 4: Exact street, area, city, pincode)
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
@@ -2831,8 +3246,12 @@ class _AttendanceManualMapDialogState extends State<AttendanceManualMapDialog> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Icon(Icons.check_circle, color: Color(0xFF059669), size: 18),
+                              const Padding(
+                                padding: EdgeInsets.only(top: 2),
+                                child: Icon(Icons.check_circle, color: Color(0xFF059669), size: 18),
+                              ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
@@ -3218,21 +3637,23 @@ class NewVisitScreen extends StatefulWidget {
 }
 
 class _NewVisitScreenState extends State<NewVisitScreen> {
-  final _clientNameController = TextEditingController(text: 'SMVEC Campus / Tech Park');
-  final _contactPersonController = TextEditingController(text: 'Dean / Admin Office');
-  final _phoneController = TextEditingController(text: '+91 413 264 3000');
-  final _dealSizeController = TextEditingController(text: '1850000');
-  final _notesController = TextEditingController(text: 'Met with administrative board. Discussed Trackora campus and field deployment.');
+  final _clientNameController = TextEditingController();
+  final _contactPersonController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _dealSizeController = TextEditingController();
+  final _notesController = TextEditingController();
 
-  final String _selectedState = 'Pondicherry';
-  String _markedArea = 'Madagadipet, Pondicherry - 605107';
+  final String _selectedState = 'Tamil Nadu';
+  String _markedArea = 'Tap below to pin location on Google Map';
   double _markedLat = 11.942288;
   double _markedLng = 79.815606;
   DateTime _pinnedDateTime = DateTime.now();
 
   String _selectedType = 'In-Person';
   File? _storePhotoFile;
-  bool _hasVoice = true;
+  bool _hasVoice = false;
+  String? _recordedAudioPath;
+  String? _recordedAudioDuration;
 
   @override
   void initState() {
@@ -3240,6 +3661,34 @@ class _NewVisitScreenState extends State<NewVisitScreen> {
     if (widget.livePosition != null) {
       _markedLat = widget.livePosition!.latitude;
       _markedLng = widget.livePosition!.longitude;
+      _resolveCurrentAddress();
+    } else {
+      _fetchCurrentGpsAndAddress();
+    }
+  }
+
+  Future<void> _fetchCurrentGpsAndAddress() async {
+    final pos = await RealHardwareService.getRealCurrentGpsPosition();
+    if (pos != null && mounted) {
+      setState(() {
+        _markedLat = pos.latitude;
+        _markedLng = pos.longitude;
+      });
+      final addr = await RealHardwareService.getAddressFromCoordinates(pos.latitude, pos.longitude);
+      if (mounted) {
+        setState(() {
+          _markedArea = addr;
+        });
+      }
+    }
+  }
+
+  Future<void> _resolveCurrentAddress() async {
+    final addr = await RealHardwareService.getAddressFromCoordinates(_markedLat, _markedLng);
+    if (mounted) {
+      setState(() {
+        _markedArea = addr;
+      });
     }
   }
 
@@ -3253,11 +3702,12 @@ class _NewVisitScreenState extends State<NewVisitScreen> {
       _selectedType = 'In-Person';
       _storePhotoFile = null;
       _hasVoice = false;
-      _markedArea = 'Select location via Google Map';
-      _markedLat = 13.0418;
-      _markedLng = 80.2341;
+      _recordedAudioPath = null;
+      _recordedAudioDuration = null;
+      _markedArea = 'Tap below to pin location on Google Map';
       _pinnedDateTime = DateTime.now();
     });
+    _fetchCurrentGpsAndAddress();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         backgroundColor: Color(0xFF0F5132),
@@ -3280,7 +3730,7 @@ class _NewVisitScreenState extends State<NewVisitScreen> {
       builder: (ctx) => AttendanceManualMapDialog(
         initialLat: _markedLat,
         initialLng: _markedLng,
-        initialArea: _markedArea.contains('Select') ? 'Usman Road, T. Nagar, Chennai - 600017' : _markedArea,
+        initialArea: _markedArea,
       ),
     );
 
@@ -3291,7 +3741,10 @@ class _NewVisitScreenState extends State<NewVisitScreen> {
         _markedLng = result['lng'] as double;
         _pinnedDateTime = result['dateTime'] as DateTime;
         if (_clientNameController.text.trim().isEmpty) {
-          _clientNameController.text = _markedArea.split(',').first;
+          final firstPart = _markedArea.split(',').first.trim();
+          if (firstPart.isNotEmpty && !firstPart.contains('°')) {
+            _clientNameController.text = firstPart;
+          }
         }
       });
     }
@@ -3332,79 +3785,28 @@ class _NewVisitScreenState extends State<NewVisitScreen> {
     }
   }
 
-  // Requirement 3: Real microphone permission + audio recorder dialog
+  // Requirement 1: Dynamic voice recording dialog with real microphone
   void _openVoiceRecordModal() async {
-    await Permission.microphone.request();
-
-    if (!mounted) return;
-    showDialog(
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFF0F172A),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          title: const Row(
-            children: [
-              Icon(Icons.mic, color: Color(0xFFC084FC), size: 22),
-              SizedBox(width: 10),
-              Text('Field Audio Memo', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFFC084FC).withAlpha(100)),
-                ),
-                child: const Column(
-                  children: [
-                    Icon(Icons.graphic_eq, color: Color(0xFFC084FC), size: 48),
-                    SizedBox(height: 10),
-                    Text('00:32 / 01:00', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                    SizedBox(height: 4),
-                    Text('Microphone Access Verified • Audio Recorded', style: TextStyle(color: Color(0xFFCBD5E1), fontSize: 11)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Text('Audio will be securely attached to this client visit record.', style: TextStyle(color: Colors.white70, fontSize: 11)),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
-            ),
-            ElevatedButton.icon(
-              onPressed: () {
-                setState(() {
-                  _hasVoice = true;
-                });
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    backgroundColor: Color(0xFF0F5132),
-                    behavior: SnackBarBehavior.floating,
-                    content: Text('Voice note (32s) attached to visit record! ✓'),
-                  ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF9333EA),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              icon: const Icon(Icons.check, size: 18),
-              label: const Text('Attach Audio Note ✓'),
-            ),
-          ],
-        );
-      },
+      barrierDismissible: false,
+      builder: (ctx) => const AudioRecorderDialog(),
     );
+
+    if (result != null && mounted) {
+      setState(() {
+        _hasVoice = true;
+        _recordedAudioPath = result['path'] as String?;
+        _recordedAudioDuration = result['duration'] as String? ?? '08s';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF0F5132),
+          behavior: SnackBarBehavior.floating,
+          content: Text('Dynamic voice memo ($_recordedAudioDuration) attached to visit record! ✓'),
+        ),
+      );
+    }
   }
 
   void _submitVisit() {
@@ -3421,7 +3823,7 @@ class _NewVisitScreenState extends State<NewVisitScreen> {
     widget.onSubmit({
       'id': 'v-${DateTime.now().millisecondsSinceEpoch}',
       'client': _clientNameController.text.trim(),
-      'contact': _contactPersonController.text.trim().isNotEmpty ? _contactPersonController.text.trim() : 'Store Manager',
+      'contact': _contactPersonController.text.trim().isNotEmpty ? _contactPersonController.text.trim() : 'Store Representative',
       'phone': _phoneController.text.trim().isNotEmpty ? _phoneController.text.trim() : '+91 98400 00000',
       'area': _markedArea,
       'state': _selectedState,
@@ -3432,12 +3834,13 @@ class _NewVisitScreenState extends State<NewVisitScreen> {
       'coordinates': '${_markedLat.toStringAsFixed(4)}° N, ${_markedLng.toStringAsFixed(4)}° E',
       'type': _selectedType,
       'status': 'Pending Approval',
-      'notes': _notesController.text.trim().isNotEmpty ? _notesController.text.trim() : 'Field visit completed and discussion logged.',
+      'notes': _notesController.text.trim().isNotEmpty ? _notesController.text.trim() : 'Field client visit completed and logged.',
       'hotLead': true,
       'hasPhoto': _storePhotoFile != null,
       'photoFile': _storePhotoFile,
       'hasAudio': _hasVoice,
-      'audioDuration': _hasVoice ? '32s' : null,
+      'audioDuration': _hasVoice ? (_recordedAudioDuration ?? '15s') : null,
+      'audioPath': _recordedAudioPath,
       'lat': _markedLat,
       'lng': _markedLng,
     });
@@ -3747,7 +4150,7 @@ class _NewVisitScreenState extends State<NewVisitScreen> {
                           Icon(Icons.mic, color: _hasVoice ? const Color(0xFF9333EA) : const Color(0xFF64748B), size: 18),
                           const SizedBox(width: 6),
                           Text(
-                            _hasVoice ? 'Voice Note (32s) ✓' : 'Record Audio Note',
+                            _hasVoice ? 'Voice Note (${_recordedAudioDuration ?? "Audio"}) ✓' : 'Record Audio Note',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
