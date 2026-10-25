@@ -129,8 +129,8 @@ const INITIAL_VISITS: VisitRecord[] = [
   },
   {
     id: 'v-105',
-    repName: 'Rajesh Kumar',
-    repAvatar: 'RK',
+    repName: 'Sanjay Verma',
+    repAvatar: 'SV',
     repTerritory: 'Coimbatore & Western TN',
     clientName: 'L&T Heavy Engineering',
     contactPerson: 'V. Sundaram (Plant Admin)',
@@ -539,14 +539,14 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              {/* Coimbatore Pin (Rajesh Kumar at L&T) */}
+              {/* Coimbatore Pin (Sanjay Verma at L&T) */}
               <div className="absolute top-[68%] right-[40%] group cursor-pointer">
                 <div className="relative flex flex-col items-center">
                   <div className="px-2 py-0.5 rounded-md bg-white text-slate-900 font-bold text-[10px] shadow-lg mb-1 whitespace-nowrap border border-slate-100">
-                    Rajesh • L&T (Coimbatore)
+                    Sanjay • L&T (Coimbatore)
                   </div>
                   <div className="w-5 h-5 rounded-full bg-purple-600 border-2 border-white shadow-md flex items-center justify-center text-[9px] text-white font-bold">
-                    RK
+                    SV
                   </div>
                 </div>
               </div>

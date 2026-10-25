@@ -271,19 +271,13 @@ async function seedInitialData() {
   const { v4: uuidv4 } = require('uuid');
   const saltRounds = 10;
 
-  // Admin
+  // Admin (Single Overall Master Admin)
   const adminId = uuidv4();
   const adminPassword = await bcrypt.hash('admin123', saltRounds);
   run('INSERT INTO users (id, name, email, password, role, territory, phone, avatar_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [adminId, 'Admin User', 'admin@trackora.in', adminPassword, 'admin', 'All India', '+91 98000 00000', 'AU', nowISO(), nowISO()]);
+    [adminId, 'Admin User', 'admin@trackora.in', adminPassword, 'admin', 'All India (Central Command)', '+91 98000 00000', 'AU', nowISO(), nowISO()]);
 
-  // Manager
-  const managerId = uuidv4();
-  const managerPassword = await bcrypt.hash('manager123', saltRounds);
-  run('INSERT INTO users (id, name, email, password, role, territory, phone, avatar_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [managerId, 'Rajesh Kumar', 'rajesh@trackora.in', managerPassword, 'manager', 'South India', '+91 98001 00001', 'RK', nowISO(), nowISO()]);
-
-  // Sales Reps
+  // Sales Reps (Field Sales Force)
   const salesPassword = await bcrypt.hash('sales123', saltRounds);
 
   const praveenId = uuidv4();
@@ -315,15 +309,15 @@ async function seedInitialData() {
     [uuidv4(), praveenId, 'SMVEC Campus / Tech Park', 'Dean / Admin Office', '+91 413 264 3000',
       'Pondicherry', 'Madagadipet, Pondicherry', 11.942288, 79.815606,
       1850000, 'In-Person', 'Met with administrative board. Discussed Trackora campus and field deployment.',
-      1, 1, 'approved', 1, managerId, nowISO(), today, '10:15'],
+      1, 1, 'approved', 1, adminId, nowISO(), today, '10:15'],
     [uuidv4(), praveenId, 'Pothys Flagship Store', 'Murugan Swaminathan (GM)', '+91 98400 11223',
       'Tamil Nadu', 'Usman Road, T. Nagar, Chennai', 13.0418, 80.2341,
       1500000, 'In-Person', 'Enterprise contract discussion for retail tracking solution.',
-      1, 1, 'approved', 1, managerId, nowISO(), today, '11:45'],
+      1, 1, 'approved', 1, adminId, nowISO(), today, '11:45'],
     [uuidv4(), praveenId, 'Saravana Stores Elite', 'R. Veeramani (Procurement)', '+91 98401 55667',
       'Tamil Nadu', 'Pondy Bazaar, Chennai', 13.0402, 80.2389,
       850000, 'Product Demo', 'Gave full product demonstration to procurement head.',
-      1, 0, 'approved', 1, managerId, nowISO(), today, '13:20'],
+      1, 0, 'approved', 1, adminId, nowISO(), today, '13:20'],
     [uuidv4(), inthiyazId, 'Reliance Retail South Hub', 'Anil Kumble (Regional Head)', '+91 99000 44556',
       'Karnataka', 'MG Road, Bengaluru', 12.9716, 77.5946,
       4500000, 'Contract Negotiation', 'High-value enterprise contract negotiation for pan-India rollout.',
@@ -353,7 +347,7 @@ async function seedInitialData() {
 
   saveDatabase();
   console.log('✅ Initial data seeded successfully');
-  console.log('   Users: admin@trackora.in (admin123), praveen@trackora.in (sales123), inthiyaz@trackora.in (sales123), rajesh@trackora.in (manager123)');
+  console.log('   Users: admin@trackora.in (admin123), praveen@trackora.in (sales123), inthiyaz@trackora.in (sales123)');
 }
 
 module.exports = { initializeDatabase, getDb, saveDatabase };

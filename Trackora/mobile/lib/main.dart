@@ -447,15 +447,15 @@ class _LoginScreenState extends State<LoginScreen> {
                               border: Border.all(color: const Color(0xFFBBF7D0)),
                               borderRadius: BorderRadius.circular(14),
                             ),
-                            child: Row(
+                            child: const Row(
                               children: [
                                 CircleAvatar(
                                   radius: 16,
-                                  backgroundColor: const Color(0xFF0F5132),
-                                  child: const Text('PB', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                                  backgroundColor: Color(0xFF0F5132),
+                                  child: Text('PB', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
                                 ),
-                                const SizedBox(width: 10),
-                                const Expanded(
+                                SizedBox(width: 10),
+                                Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
@@ -470,7 +470,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ],
                                   ),
                                 ),
-                                const Icon(Icons.arrow_forward_ios, size: 12, color: Color(0xFF059669)),
+                                Icon(Icons.arrow_forward_ios, size: 12, color: Color(0xFF059669)),
                               ],
                             ),
                           ),
@@ -492,15 +492,15 @@ class _LoginScreenState extends State<LoginScreen> {
                               border: Border.all(color: const Color(0xFFE2E8F0)),
                               borderRadius: BorderRadius.circular(14),
                             ),
-                            child: Row(
+                            child: const Row(
                               children: [
                                 CircleAvatar(
                                   radius: 16,
-                                  backgroundColor: const Color(0xFF0D9488),
-                                  child: const Text('IA', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                                  backgroundColor: Color(0xFF0D9488),
+                                  child: Text('IA', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
                                 ),
-                                const SizedBox(width: 10),
-                                const Expanded(
+                                SizedBox(width: 10),
+                                Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
@@ -515,7 +515,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ],
                                   ),
                                 ),
-                                const Icon(Icons.arrow_forward_ios, size: 12, color: Color(0xFF64748B)),
+                                Icon(Icons.arrow_forward_ios, size: 12, color: Color(0xFF64748B)),
                               ],
                             ),
                           ),
@@ -545,6 +545,668 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 // -------------------------------------------------------------
+// LIVE DATE & TIME HELPERS
+// -------------------------------------------------------------
+String formatLiveDate(DateTime dt) {
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  final dayName = days[dt.weekday - 1];
+  final monthName = months[dt.month - 1];
+  final hour = dt.hour == 0 ? 12 : (dt.hour > 12 ? dt.hour - 12 : dt.hour);
+  final period = dt.hour >= 12 ? 'PM' : 'AM';
+  final min = dt.minute.toString().padLeft(2, '0');
+  return '$dayName, ${dt.day} $monthName ${dt.year} • ${hour.toString().padLeft(2, '0')}:$min $period';
+}
+
+String formatLiveTime(DateTime dt) {
+  final hour = dt.hour == 0 ? 12 : (dt.hour > 12 ? dt.hour - 12 : dt.hour);
+  final period = dt.hour >= 12 ? 'PM' : 'AM';
+  final min = dt.minute.toString().padLeft(2, '0');
+  return '${hour.toString().padLeft(2, '0')}:$min $period';
+}
+
+String getTodayDateKey() {
+  final now = DateTime.now();
+  return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+}
+
+// -------------------------------------------------------------
+// INTERACTIVE GOOGLE MAP LOCATION PICKER DIALOG
+// -------------------------------------------------------------
+class AttendanceMapPickerDialog extends StatefulWidget {
+  final double initialLat;
+  final double initialLng;
+  final String initialArea;
+
+  const AttendanceMapPickerDialog({
+    super.key,
+    required this.initialLat,
+    required this.initialLng,
+    required this.initialArea,
+  });
+
+  @override
+  State<AttendanceMapPickerDialog> createState() => _AttendanceMapPickerDialogState();
+}
+
+class _AttendanceMapPickerDialogState extends State<AttendanceMapPickerDialog> {
+  late double _lat;
+  late double _lng;
+  late String _area;
+  late DateTime _selectedTime;
+
+  @override
+  void initState() {
+    super.initState();
+    _lat = widget.initialLat;
+    _lng = widget.initialLng;
+    _area = widget.initialArea;
+    _selectedTime = DateTime.now();
+  }
+
+  void _selectPreset(String landmark, double lat, double lng) {
+    setState(() {
+      _lat = lat;
+      _lng = lng;
+      _area = landmark;
+      _selectedTime = DateTime.now();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 20),
+      child: Container(
+        constraints: const BoxConstraints(maxHeight: 650),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withAlpha(50),
+              blurRadius: 30,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 16, 12),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFECFDF5),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.add_location_alt, color: Color(0xFF0F5132), size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Pin Work Location (Google Map)',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                        ),
+                        Text(
+                          'Tap map or landmark to set GPS attendance pin',
+                          style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: Color(0xFF64748B)),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Interactive Map Canvas
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: SizedBox(
+                        height: 200,
+                        width: double.infinity,
+                        child: GestureDetector(
+                          onTapDown: (details) {
+                            setState(() {
+                              _lat = double.parse((_lat + (details.localPosition.dy - 100) * 0.00005).toStringAsFixed(6));
+                              _lng = double.parse((_lng + (details.localPosition.dx - 150) * 0.00005).toStringAsFixed(6));
+                              _selectedTime = DateTime.now();
+                            });
+                          },
+                          child: Stack(
+                            children: [
+                              CustomPaint(
+                                painter: MintMapPainter(),
+                                size: const Size(double.infinity, 200),
+                              ),
+                              // Target crosshair
+                              Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: const Color(0xFF0F5132).withAlpha(45),
+                                        border: Border.all(color: const Color(0xFF0F5132), width: 2),
+                                      ),
+                                      child: const Icon(Icons.location_on, color: Color(0xFF0F5132), size: 28),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF1E293B),
+                                        borderRadius: BorderRadius.circular(16),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withAlpha(40),
+                                            blurRadius: 8,
+                                          ),
+                                        ],
+                                      ),
+                                      child: Text(
+                                        '${_lat.toStringAsFixed(4)}°, ${_lng.toStringAsFixed(4)}°',
+                                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Guidance Tag
+                              Positioned(
+                                bottom: 8,
+                                left: 10,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withAlpha(230),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                                  ),
+                                  child: const Row(
+                                    children: [
+                                      Icon(Icons.touch_app, size: 12, color: Color(0xFF0F5132)),
+                                      SizedBox(width: 4),
+                                      Text('Tap anywhere on map to reposition pin', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Quick Select Landmarks
+                    const Text(
+                      'Select Indian Commercial Landmark:',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                    ),
+                    const SizedBox(height: 8),
+
+                    _buildLandmarkTile('Usman Road, T. Nagar, Chennai', 13.0418, 80.2341),
+                    _buildLandmarkTile('Madagadipet, Pondicherry (SMVEC Campus)', 11.9423, 79.8156),
+                    _buildLandmarkTile('Pondy Bazaar, T. Nagar, Chennai', 13.0402, 80.2389),
+                    _buildLandmarkTile('MG Road / Brigade Road, Bengaluru', 12.9716, 77.5946),
+                    _buildLandmarkTile('Powai Business Hub, Mumbai', 19.1176, 72.9060),
+
+                    const SizedBox(height: 14),
+
+                    // Verified Location Card Preview
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.check_circle, color: Color(0xFF059669), size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _area,
+                                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Color(0xFF0F172A)),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                '📍 GPS Coordinates: ${_lat.toStringAsFixed(4)}° N, ${_lng.toStringAsFixed(4)}° E',
+                                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFECFDF5),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text('±3m Locked', style: TextStyle(color: Color(0xFF059669), fontSize: 9, fontWeight: FontWeight.bold)),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '🕒 Stamped: ${formatLiveDate(_selectedTime)}',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Confirm Button
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context, {
+                      'area': _area,
+                      'coordinates': '${_lat.toStringAsFixed(4)}° N, ${_lng.toStringAsFixed(4)}° E',
+                      'lat': _lat,
+                      'lng': _lng,
+                      'dateTime': _selectedTime,
+                      'dateTimeString': formatLiveDate(_selectedTime),
+                    });
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0F5132),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    elevation: 0,
+                  ),
+                  icon: const Icon(Icons.check, size: 18),
+                  label: const Text('Confirm Pinned Location ✓', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLandmarkTile(String landmark, double lat, double lng) {
+    final isSelected = _area == landmark;
+    return InkWell(
+      onTap: () => _selectPreset(landmark, lat, lng),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFECFDF5) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: isSelected ? const Color(0xFF0F5132) : const Color(0xFFE2E8F0)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.place, size: 16, color: isSelected ? const Color(0xFF0F5132) : const Color(0xFF94A3B8)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                landmark,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                  color: isSelected ? const Color(0xFF0F5132) : const Color(0xFF1E293B),
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (isSelected) const Icon(Icons.check_circle, size: 16, color: Color(0xFF0F5132)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// -------------------------------------------------------------
+// IN-APP CAMERA OFFICER PHOTO VERIFICATION DIALOG
+// -------------------------------------------------------------
+class OfficerSelfieCameraDialog extends StatefulWidget {
+  final SalesUser currentUser;
+  final String? pinnedLocation;
+
+  const OfficerSelfieCameraDialog({
+    super.key,
+    required this.currentUser,
+    this.pinnedLocation,
+  });
+
+  @override
+  State<OfficerSelfieCameraDialog> createState() => _OfficerSelfieCameraDialogState();
+}
+
+class _OfficerSelfieCameraDialogState extends State<OfficerSelfieCameraDialog> {
+  bool _isUploading = false;
+  bool _uploadSuccess = false;
+
+  void _capturePhoto() async {
+    setState(() {
+      _isUploading = true;
+    });
+
+    // Simulate shutter flash & secure upload
+    await Future.delayed(const Duration(milliseconds: 700));
+
+    if (mounted) {
+      setState(() {
+        _isUploading = false;
+        _uploadSuccess = true;
+      });
+    }
+
+    await Future.delayed(const Duration(milliseconds: 600));
+
+    if (mounted) {
+      Navigator.pop(context, {
+        'success': true,
+        'timestamp': formatLiveTime(DateTime.now()),
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withAlpha(80),
+              blurRadius: 30,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Top Bar
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 16, 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.camera_alt, color: Color(0xFF10B981), size: 20),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Officer Face Verification',
+                      style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
+
+            // Camera Viewfinder Box
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Container(
+                  height: 320,
+                  width: double.infinity,
+                  color: const Color(0xFF020617),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Subtle camera sensor grid
+                      CustomPaint(
+                        size: const Size(double.infinity, 320),
+                        painter: CameraGridPainter(),
+                      ),
+
+                      // Center Face Oval Reticle
+                      Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 150,
+                              height: 190,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(80),
+                                border: Border.all(
+                                  color: _uploadSuccess ? const Color(0xFF10B981) : const Color(0xFF34D399).withAlpha(180),
+                                  width: 2.5,
+                                ),
+                                color: Colors.white.withAlpha(10),
+                              ),
+                              child: Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 36,
+                                      backgroundColor: const Color(0xFF0F5132),
+                                      child: Text(
+                                        widget.currentUser.avatarText,
+                                        style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      widget.currentUser.name,
+                                      style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    const Text(
+                                      'ID Verified',
+                                      style: TextStyle(color: Color(0xFF6EE7B7), fontSize: 10, fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              _uploadSuccess ? '✔ Face Verified & Uploaded!' : 'Align your face within the frame',
+                              style: TextStyle(
+                                color: _uploadSuccess ? const Color(0xFF6EE7B7) : Colors.white70,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Watermark Overlay on Viewfinder
+                      Positioned(
+                        bottom: 12,
+                        left: 14,
+                        right: 14,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withAlpha(150),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '📍 ${widget.pinnedLocation ?? 'GPS Verified Location'}',
+                                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                '⏰ Stamped: ${formatLiveDate(now)} • Sensor Locked',
+                                style: const TextStyle(color: Color(0xFF6EE7B7), fontSize: 9),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // Loading Overlay
+                      if (_isUploading)
+                        Container(
+                          color: Colors.black.withAlpha(180),
+                          child: const Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CircularProgressIndicator(color: Color(0xFF10B981)),
+                                SizedBox(height: 14),
+                                Text(
+                                  'Uploading Photo to Secure Server...',
+                                  style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+
+                      // Success Overlay
+                      if (_uploadSuccess)
+                        Container(
+                          color: const Color(0xFF0F5132).withAlpha(200),
+                          child: const Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.check_circle, color: Color(0xFF6EE7B7), size: 54),
+                                SizedBox(height: 10),
+                                Text(
+                                  'Photo Uploaded Successfully! ✓',
+                                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            // Controls Bar
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withAlpha(20),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.flash_auto, color: Colors.white70, size: 20),
+                  ),
+
+                  // Shutter Button
+                  GestureDetector(
+                    onTap: _isUploading || _uploadSuccess ? null : _capturePhoto,
+                    child: Container(
+                      width: 68,
+                      height: 68,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: const Color(0xFF10B981), width: 4),
+                        color: Colors.white,
+                      ),
+                      child: Center(
+                        child: Container(
+                          width: 52,
+                          height: 52,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Color(0xFF0F5132),
+                          ),
+                          child: const Icon(Icons.camera_alt, color: Colors.white, size: 26),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withAlpha(20),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.flip_camera_ios, color: Colors.white70, size: 20),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class CameraGridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withAlpha(15)
+      ..strokeWidth = 1;
+    canvas.drawLine(Offset(size.width / 3, 0), Offset(size.width / 3, size.height), paint);
+    canvas.drawLine(Offset(size.width * 2 / 3, 0), Offset(size.width * 2 / 3, size.height), paint);
+    canvas.drawLine(Offset(0, size.height / 3), Offset(size.width, size.height / 3), paint);
+    canvas.drawLine(Offset(0, size.height * 2 / 3), Offset(size.width, size.height * 2 / 3), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// -------------------------------------------------------------
 // MAIN NAVIGATION SHELL
 // -------------------------------------------------------------
 class MainNavigationShell extends StatefulWidget {
@@ -563,9 +1225,15 @@ class MainNavigationShell extends StatefulWidget {
 
 class _MainNavigationShellState extends State<MainNavigationShell> {
   int _currentIndex = 0;
-  bool _isCheckedIn = true;
-  String _checkInTime = '09:14 AM';
-  String _checkInLocation = 'Pondicherry / Chennai • Verified (±3m)';
+
+  // Attendance State - Starts as NOT MARKED (Screenshot 1)
+  bool _isCheckedIn = false;
+  String? _punchedDateKey;
+  String _checkInTime = '10:05 AM';
+  String _checkInLocation = 'Usman Road, T. Nagar, Chennai';
+  Map<String, dynamic>? _stagedLocation;
+  bool _stagedPhotoCaptured = false;
+  String? _stagedPhotoTime;
 
   // Visits in Memory
   final List<Map<String, dynamic>> _visits = [
@@ -627,10 +1295,96 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     },
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    _checkMidnightRollover();
+  }
+
+  void _checkMidnightRollover() {
+    final today = getTodayDateKey();
+    if (_punchedDateKey != null && _punchedDateKey != today) {
+      setState(() {
+        _isCheckedIn = false;
+        _punchedDateKey = null;
+        _stagedLocation = null;
+        _stagedPhotoCaptured = false;
+        _stagedPhotoTime = null;
+      });
+    }
+  }
+
+  void _onLocationPinned(Map<String, dynamic> loc) {
+    setState(() {
+      _stagedLocation = loc;
+    });
+  }
+
+  void _onPhotoCaptured(String timestamp) {
+    setState(() {
+      _stagedPhotoCaptured = true;
+      _stagedPhotoTime = timestamp;
+    });
+  }
+
+  void _onPunchAttendance() {
+    final now = DateTime.now();
+    setState(() {
+      _isCheckedIn = true;
+      _punchedDateKey = getTodayDateKey();
+      _checkInTime = formatLiveTime(now);
+      _checkInLocation = _stagedLocation != null ? _stagedLocation!['area'] : 'Usman Road, T. Nagar, Chennai';
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: const Color(0xFF0F5132),
+        behavior: SnackBarBehavior.floating,
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.white, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '🎉 Daily Geo-Attendance punched successfully! Verified at $_checkInLocation at $_checkInTime.',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _onSimulateMidnightReset() {
+    setState(() {
+      _isCheckedIn = false;
+      _punchedDateKey = null;
+      _stagedLocation = null;
+      _stagedPhotoCaptured = false;
+      _stagedPhotoTime = null;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        backgroundColor: Color(0xFF1E293B),
+        behavior: SnackBarBehavior.floating,
+        content: Row(
+          children: [
+            Icon(Icons.nightlight_round, color: Color(0xFFFDBA74), size: 20),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '🌙 12:00 AM Midnight Rollover Simulated! Attendance reset to NOT MARKED for the new day.',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _addNewVisit(Map<String, dynamic> visit) {
     setState(() {
       _visits.insert(0, visit);
-      _currentIndex = 2; // Switch to visits tab to see the logged visit
+      _currentIndex = 2; // Switch to visits tab
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -649,22 +1403,22 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
 
   @override
   Widget build(BuildContext context) {
+    _checkMidnightRollover();
+
     final screens = [
       HomeScreen(
         currentUser: widget.currentUser,
         isCheckedIn: _isCheckedIn,
         checkInTime: _checkInTime,
         checkInLocation: _checkInLocation,
+        stagedLocation: _stagedLocation,
+        stagedPhotoCaptured: _stagedPhotoCaptured,
+        stagedPhotoTime: _stagedPhotoTime,
         visits: _visits,
-        onToggleCheckIn: () {
-          setState(() {
-            _isCheckedIn = !_isCheckedIn;
-            if (_isCheckedIn) {
-              _checkInTime = '10:05 AM';
-              _checkInLocation = 'GPS Verified: Live Sensor Locked (±3m)';
-            }
-          });
-        },
+        onLocationPinned: _onLocationPinned,
+        onPhotoCaptured: _onPhotoCaptured,
+        onPunchAttendance: _onPunchAttendance,
+        onSimulateMidnightReset: _onSimulateMidnightReset,
         onNavigateToNewVisit: () {
           setState(() {
             _currentIndex = 1;
@@ -678,6 +1432,9 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
       VisitsHistoryScreen(visits: _visits),
       ProfileScreen(
         currentUser: widget.currentUser,
+        isCheckedIn: _isCheckedIn,
+        checkInTime: _checkInTime,
+        onSimulateMidnightReset: _onSimulateMidnightReset,
         onLogout: widget.onLogout,
       ),
     ];
@@ -741,8 +1498,14 @@ class HomeScreen extends StatelessWidget {
   final bool isCheckedIn;
   final String checkInTime;
   final String checkInLocation;
+  final Map<String, dynamic>? stagedLocation;
+  final bool stagedPhotoCaptured;
+  final String? stagedPhotoTime;
   final List<Map<String, dynamic>> visits;
-  final VoidCallback onToggleCheckIn;
+  final Function(Map<String, dynamic>) onLocationPinned;
+  final Function(String) onPhotoCaptured;
+  final VoidCallback onPunchAttendance;
+  final VoidCallback onSimulateMidnightReset;
   final VoidCallback onNavigateToNewVisit;
 
   const HomeScreen({
@@ -751,10 +1514,87 @@ class HomeScreen extends StatelessWidget {
     required this.isCheckedIn,
     required this.checkInTime,
     required this.checkInLocation,
+    required this.stagedLocation,
+    required this.stagedPhotoCaptured,
+    required this.stagedPhotoTime,
     required this.visits,
-    required this.onToggleCheckIn,
+    required this.onLocationPinned,
+    required this.onPhotoCaptured,
+    required this.onPunchAttendance,
+    required this.onSimulateMidnightReset,
     required this.onNavigateToNewVisit,
   });
+
+  void _openAttendanceMapPicker(BuildContext context) async {
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AttendanceMapPickerDialog(
+        initialLat: stagedLocation != null ? (stagedLocation!['lat'] as double) : 13.0418,
+        initialLng: stagedLocation != null ? (stagedLocation!['lng'] as double) : 80.2341,
+        initialArea: stagedLocation != null ? (stagedLocation!['area'] as String) : 'Usman Road, T. Nagar, Chennai',
+      ),
+    );
+
+    if (result != null) {
+      onLocationPinned(result);
+    }
+  }
+
+  void _openOfficerSelfieCamera(BuildContext context) async {
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => OfficerSelfieCameraDialog(
+        currentUser: currentUser,
+        pinnedLocation: stagedLocation != null ? stagedLocation!['area'] : 'Usman Road, T. Nagar, Chennai',
+      ),
+    );
+
+    if (result != null && result['success'] == true) {
+      onPhotoCaptured(result['timestamp'] as String);
+    }
+  }
+
+  void _handlePunchClick(BuildContext context) {
+    if (stagedLocation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Color(0xFFB45309),
+          behavior: SnackBarBehavior.floating,
+          content: Row(
+            children: [
+              Icon(Icons.info, color: Colors.white, size: 20),
+              SizedBox(width: 10),
+              Expanded(child: Text('Step 1: Please tap to pin your work location on Google Map first!')),
+            ],
+          ),
+        ),
+      );
+      _openAttendanceMapPicker(context);
+      return;
+    }
+
+    if (!stagedPhotoCaptured) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Color(0xFFB45309),
+          behavior: SnackBarBehavior.floating,
+          content: Row(
+            children: [
+              Icon(Icons.camera_alt, color: Colors.white, size: 20),
+              SizedBox(width: 10),
+              Expanded(child: Text('Step 2: Please click for officer photo before punching attendance!')),
+            ],
+          ),
+        ),
+      );
+      _openOfficerSelfieCamera(context);
+      return;
+    }
+
+    onPunchAttendance();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -815,7 +1655,7 @@ class HomeScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Daily Geo Attendance Card
+            // Daily Geo Attendance Card (Exact match for Screenshot 1 & 2)
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
@@ -836,7 +1676,9 @@ class HomeScreen extends StatelessWidget {
                 ],
               ),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Top Title & Status Pill
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -884,44 +1726,237 @@ class HomeScreen extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withAlpha(25),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.place, color: Color(0xFF6EE7B7), size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            isCheckedIn ? '$checkInTime • $checkInLocation' : 'Tap below to capture verified GPS coordinates',
-                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
+
+                  // Middle Section: Unmarked (Interactive Steps) vs Checked-In (Verified Pill)
+                  if (!isCheckedIn) ...[
+                    // Step 1: Tap to Pin on Google Map
+                    if (stagedLocation == null)
+                      InkWell(
+                        onTap: () => _openAttendanceMapPicker(context),
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withAlpha(25),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.white.withAlpha(20)),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.place, color: Color(0xFF6EE7B7), size: 18),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Tap below to capture verified GPS coordinates',
+                                  style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
+                                ),
+                              ),
+                              Icon(Icons.touch_app, color: Color(0xFF6EE7B7), size: 16),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 46,
-                    child: ElevatedButton.icon(
-                      onPressed: onToggleCheckIn,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isCheckedIn ? Colors.white : const Color(0xFF0F5132),
-                        foregroundColor: isCheckedIn ? const Color(0xFF0F5132) : Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        elevation: 0,
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF064E3B).withAlpha(150),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFF10B981).withAlpha(120)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.location_on, color: Color(0xFF6EE7B7), size: 18),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    stagedLocation!['area'] ?? '',
+                                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () => _openAttendanceMapPicker(context),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withAlpha(30),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Text('Change Pin', style: TextStyle(color: Color(0xFF6EE7B7), fontSize: 10, fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  '📍 Coordinates: ${stagedLocation!['coordinates']}',
+                                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                                ),
+                                const Text(
+                                  '±3m GPS Lock',
+                                  style: TextStyle(color: Color(0xFF6EE7B7), fontSize: 10, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '🕒 Date & Time: ${stagedLocation!['dateTimeString']}',
+                              style: const TextStyle(color: Colors.white70, fontSize: 11),
+                            ),
+                          ],
+                        ),
                       ),
-                      icon: Icon(isCheckedIn ? Icons.verified : Icons.touch_app, size: 18),
-                      label: Text(
-                        isCheckedIn ? 'Checked In Today ✓ (Tap to refresh)' : 'Punch Daily Geo-Attendance',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+
+                    // Step 2: Officer Photo Button
+                    if (stagedLocation != null) ...[
+                      const SizedBox(height: 10),
+                      if (!stagedPhotoCaptured)
+                        SizedBox(
+                          width: double.infinity,
+                          height: 40,
+                          child: OutlinedButton.icon(
+                            onPressed: () => _openOfficerSelfieCamera(context),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFF6EE7B7), width: 1.2),
+                              foregroundColor: Colors.white,
+                              backgroundColor: Colors.white.withAlpha(15),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            icon: const Icon(Icons.camera_alt, color: Color(0xFF6EE7B7), size: 16),
+                            label: const Text(
+                              'Click for Officer Photo (Selfie Proof)',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        )
+                      else
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F5132).withAlpha(120),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFF10B981).withAlpha(100)),
+                          ),
+                          child: Row(
+                            children: [
+                              const CircleAvatar(
+                                radius: 13,
+                                backgroundColor: Color(0xFF10B981),
+                                child: Icon(Icons.check, color: Colors.white, size: 14),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      '✔ Photo Uploaded Successfully',
+                                      style: TextStyle(color: Color(0xFF6EE7B7), fontSize: 11, fontWeight: FontWeight.bold),
+                                    ),
+                                    Text(
+                                      'Officer Verified • $stagedPhotoTime',
+                                      style: const TextStyle(color: Colors.white70, fontSize: 10),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: () => _openOfficerSelfieCamera(context),
+                                child: const Text('Retake', style: TextStyle(color: Colors.white70, fontSize: 11, decoration: TextDecoration.underline)),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+
+                    const SizedBox(height: 14),
+
+                    // Step 3: Punch Daily Geo-Attendance Button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 46,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _handlePunchClick(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: (stagedLocation != null && stagedPhotoCaptured)
+                              ? const Color(0xFF059669)
+                              : const Color(0xFF0F5132),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          elevation: 0,
+                        ),
+                        icon: const Icon(Icons.touch_app, size: 18),
+                        label: const Text(
+                          'Punch Daily Geo-Attendance',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
                       ),
                     ),
-                  ),
+                  ] else ...[
+                    // Stamped Active Checked-In View (Exact Match for Screenshot 2)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withAlpha(25),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.place, color: Color(0xFF6EE7B7), size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '$checkInTime • GPS Verified: $checkInLocation (±3m)',
+                              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 46,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              backgroundColor: const Color(0xFF0F5132),
+                              behavior: SnackBarBehavior.floating,
+                              content: Row(
+                                children: [
+                                  const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'Attendance already marked for today at $checkInTime! Next check-in resets after 12:00 AM midnight.',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: const Color(0xFF0F5132),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          elevation: 0,
+                        ),
+                        icon: const Icon(Icons.verified, size: 18, color: Color(0xFF0F5132)),
+                        label: const Text(
+                          'Checked In Today ✓ (Tap to refresh)',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F5132)),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -2172,9 +3207,19 @@ class VisitsHistoryScreen extends StatelessWidget {
 // -------------------------------------------------------------
 class ProfileScreen extends StatelessWidget {
   final SalesUser currentUser;
+  final bool isCheckedIn;
+  final String checkInTime;
+  final VoidCallback onSimulateMidnightReset;
   final VoidCallback onLogout;
 
-  const ProfileScreen({super.key, required this.currentUser, required this.onLogout});
+  const ProfileScreen({
+    super.key,
+    required this.currentUser,
+    required this.isCheckedIn,
+    required this.checkInTime,
+    required this.onSimulateMidnightReset,
+    required this.onLogout,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2221,6 +3266,67 @@ class ProfileScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
+
+            // Daily Attendance Lock & 12 AM Reset Card
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Today\'s Attendance Lock',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: isCheckedIn ? const Color(0xFFECFDF5) : const Color(0xFFFFF7ED),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          isCheckedIn ? 'ACTIVE ($checkInTime)' : 'NOT MARKED',
+                          style: TextStyle(
+                            color: isCheckedIn ? const Color(0xFF059669) : const Color(0xFFEA580C),
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Attendance is strictly limited to once per day. It automatically resets after 12:00 AM midnight.',
+                    style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 40,
+                    child: OutlinedButton.icon(
+                      onPressed: onSimulateMidnightReset,
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFF0F5132)),
+                        foregroundColor: const Color(0xFF0F5132),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.nightlight_round, size: 16),
+                      label: const Text('Simulate Next Day (12 AM Reset)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(

@@ -23,12 +23,11 @@ Server runs at: **http://localhost:5000**
 
 ## 👤 Default Users (Seeded on First Run)
 
-| Email | Password | Role |
-|-------|----------|------|
-| admin@trackora.in | admin123 | admin |
-| rajesh@trackora.in | manager123 | manager |
-| praveen@trackora.in | sales123 | sales_rep |
-| inthiyaz@trackora.in | sales123 | sales_rep |
+| Email | Password | Role | Description |
+|-------|----------|------|-------------|
+| admin@trackora.in | admin123 | admin | Single Master Admin (All India Central Command) |
+| praveen@trackora.in | sales123 | sales_rep | Field Sales Rep (Chennai & Tamil Nadu) |
+| inthiyaz@trackora.in | sales123 | sales_rep | Field Sales Rep (Bengaluru & Karnataka) |
 
 ## 📡 API Endpoints
 
